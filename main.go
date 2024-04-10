@@ -30,19 +30,31 @@ func (tb *TokenBucket) AddTokens(t time.Time) {
 	slog.Info("Tokens added", "tokens", tb.tokens, "last_update", tb.lastUpdate)
 }
 
+// middleware func to take token from bucket
+func (tb *TokenBucket) RateLimit(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if tb.tokens == 0 {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		tb.tokens--
+		next(w, r)
+	}
+}
+
 func main() {
 	// create a new token bucket
 	tb := &TokenBucket{
-		capacity:   5,
-		tokens:     0,
+		capacity:   10,
+		tokens:     10,
 		rate:       1,
 		lastUpdate: time.Now().Unix(),
 	}
 	// create a basic http server
-	http.HandleFunc("GET /resource", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("GET /resource", tb.RateLimit(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, World!\n"))
 		slog.Info("Request received", "path", r.URL.Path, "method", r.Method, "remote_addr", r.RemoteAddr)
-	})
+	}))
 	// create a ticker to add tokens to the bucket
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
