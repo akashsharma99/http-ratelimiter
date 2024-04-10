@@ -8,37 +8,48 @@ import (
 
 type TokenBucket struct {
 	// The total number of tokens the bucket can hold.
-	Capacity int
+	capacity int
 	// The current number of tokens in the bucket.
-	Tokens int
+	tokens int
 	// Number of tokens to add per second.
-	Rate int
+	rate int
 	// Last time the bucket was updated.
-	LastUpdate int64
+	lastUpdate int64
 }
 
-func (tb *TokenBucket) AddTokens() {
-	now := time.Now().Unix()
-	tokensToAdd := int(now-tb.LastUpdate) * tb.Rate
-	tb.Tokens = tb.Tokens + tokensToAdd
-	if tb.Tokens > tb.Capacity {
-		tb.Tokens = tb.Capacity
+func (tb *TokenBucket) AddTokens(t time.Time) {
+	// if bucket already full then no need to add tokens
+	if tb.tokens == tb.capacity {
+		return
 	}
-	tb.LastUpdate = now
+	tb.tokens += int(t.Unix()-tb.lastUpdate) * tb.rate
+	if tb.tokens > tb.capacity {
+		tb.tokens = tb.capacity
+	}
+	tb.lastUpdate = t.Unix()
+	slog.Info("Tokens added", "tokens", tb.tokens, "last_update", tb.lastUpdate)
 }
 
 func main() {
 	// create a new token bucket
 	tb := &TokenBucket{
-		Capacity:   5,
-		Tokens:     0,
-		Rate:       1,
-		LastUpdate: time.Now().Unix(),
+		capacity:   5,
+		tokens:     0,
+		rate:       1,
+		lastUpdate: time.Now().Unix(),
 	}
 	// create a basic http server
 	http.HandleFunc("GET /resource", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, World!\n"))
 		slog.Info("Request received", "path", r.URL.Path, "method", r.Method, "remote_addr", r.RemoteAddr)
 	})
+	// create a ticker to add tokens to the bucket
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	go func() {
+		for t := range ticker.C {
+			tb.AddTokens(t)
+		}
+	}()
 	http.ListenAndServe(":8080", nil)
 }
