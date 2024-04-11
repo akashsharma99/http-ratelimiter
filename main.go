@@ -4,52 +4,17 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/akashsharma99/http-ratelimiter/lib"
 )
 
-type TokenBucket struct {
-	// The total number of tokens the bucket can hold.
-	capacity int
-	// The current number of tokens in the bucket.
-	tokens int
-	// Number of tokens to add per second.
-	rate int
-	// Last time the bucket was updated.
-	lastUpdate int64
-}
-
-func (tb *TokenBucket) AddTokens(t time.Time) {
-	// if bucket already full then no need to add tokens
-	if tb.tokens == tb.capacity {
-		return
-	}
-	tb.tokens += int(t.Unix()-tb.lastUpdate) * tb.rate
-	if tb.tokens > tb.capacity {
-		tb.tokens = tb.capacity
-	}
-	tb.lastUpdate = t.Unix()
-	slog.Info("Tokens added", "tokens", tb.tokens, "last_update", tb.lastUpdate)
-}
-
-// middleware func to take token from bucket
-func (tb *TokenBucket) RateLimit(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if tb.tokens == 0 {
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			return
-		}
-		tb.tokens--
-		next(w, r)
-	}
-}
-
 func main() {
+	//tryTokenBucket()
+	tryFixedWindowCounter()
+}
+func tryTokenBucket() {
 	// create a new token bucket
-	tb := &TokenBucket{
-		capacity:   10,
-		tokens:     10,
-		rate:       1,
-		lastUpdate: time.Now().Unix(),
-	}
+	tb := lib.NewTokenBucket(10, 1, 10)
 	// create a basic http server
 	http.HandleFunc("GET /resource", tb.RateLimit(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, World!\n"))
@@ -63,5 +28,18 @@ func main() {
 			tb.AddTokens(t)
 		}
 	}()
+	slog.Info("Server started", "port", 8080)
+	http.ListenAndServe(":8080", nil)
+}
+
+func tryFixedWindowCounter() {
+	// create a new fixed window counter
+	fwc := lib.NewFixedWindowCounter(60, 60)
+	// create a basic http server
+	http.HandleFunc("GET /resource", fwc.RateLimit(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, World!\n"))
+		slog.Info("Request received", "path", r.URL.Path, "method", r.Method, "remote_addr", r.RemoteAddr)
+	}))
+	slog.Info("Server started", "port", 8080)
 	http.ListenAndServe(":8080", nil)
 }
