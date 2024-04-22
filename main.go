@@ -10,8 +10,21 @@ import (
 
 func main() {
 	//tryTokenBucket()
-	tryFixedWindowCounter()
+	//tryFixedWindowCounter()
+	trySlidungWindow()
 }
+
+func trySlidungWindow() {
+	sw := lib.NewSlidingWindow(10, time.Second)
+
+	http.HandleFunc("GET /resource", sw.RateLimit(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, World!\n"))
+		slog.Info("Request received", "path", r.URL.Path, "method", r.Method, "remote_addr", r.RemoteAddr)
+	}))
+	slog.Info("Server started", "port", 8080)
+	http.ListenAndServe(":8080", nil)
+}
+
 func tryTokenBucket() {
 	// create a new token bucket
 	tb := lib.NewTokenBucket(10, 1, 10)
